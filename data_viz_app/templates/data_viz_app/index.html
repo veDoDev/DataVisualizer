@@ -1,0 +1,661 @@
+{% extends 'data_viz_app/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="row">
+    <!-- Left Sidebar - Trace Panel -->
+    <div class="col-md-3 sidebar">
+        <div class="p-3">
+            <h4 class="mb-3">Traces</h4>
+            <button id="addTraceBtn" class="btn btn-primary mb-3 w-100">
+                <i class="fas fa-plus me-1"></i> Add Trace
+            </button>
+            
+            <div id="traceContainer">
+                <!-- Traces will be added here dynamically -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content Area -->
+    <div class="col-md-9 main-content">
+        <!-- File Name Display -->
+        <div class="container-fluid mt-3">
+            <div class="row">
+                <div class="col-12">
+                    <div class="alert alert-info" style="display: none;">
+                        <strong>Imported File:</strong> <span id="importedFileName"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Data Table Section -->
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Data Table</span>
+                        <div>
+                            <button id="addColumnBtn" class="btn btn-sm btn-outline-primary me-1">
+                                <i class="fas fa-plus"></i> Add Column
+                            </button>
+                            <button id="addRowBtn" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-plus"></i> Add Row
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="dataTable" class="data-table-container"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Visualization Section -->
+<div class="col-12 mt-4">
+    <div class="card">
+        <div class="card-header">Visualization</div>
+        <div class="card-body">
+            <div id="plotContainer" class="plot-container">
+                <div class="text-center text-muted py-5">
+                    <i class="fas fa-chart-line fa-3x mb-3"></i>
+                    <p>Select columns and a graph type to visualize your data</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Trace Modal -->
+<div class="modal fade" id="traceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Trace</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="traceForm">
+                    <div class="mb-3">
+                        <label for="graphType" class="form-label">Graph Type</label>
+                        <select id="graphType" class="form-select" required>
+                            <option value="">Select a graph type</option>
+                            <option value="scatter">Scatter Plot</option>
+                            <option value="bar">Bar Chart</option>
+                            <option value="line">Line Chart</option>
+                            <option value="area">Area Chart</option>
+                            <option value="heatmap">Heatmap</option>
+                            <option value="contour">Contour Plot</option>
+                            <option value="pie">Pie Chart</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="xColumn" class="form-label">X-Axis Column</label>
+                        <select id="xColumn" class="form-select" required>
+                            <option value="">Select a column</option>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="yColumn" class="form-label">Y-Axis Column</label>
+                        <select id="yColumn" class="form-select" required>
+                            <option value="">Select a column</option>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Add Trace</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    // Global variables
+    let hot; // Handsontable instance
+    let currentData = []; // Current data in the table
+    let traces = []; // Array to store trace configurations
+    
+    // Initialize the page
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeHandsontable();
+        setupEventListeners();
+    });
+    
+    // Initialize Handsontable (spreadsheet)
+    function initializeHandsontable() {
+        const container = document.getElementById('dataTable');
+        hot = new Handsontable(container, {
+            data: [['', '', ''], ['', '', ''], ['', '', '']],
+            rowHeaders: true,
+            colHeaders: true,
+            licenseKey: 'non-commercial-and-evaluation',
+            contextMenu: true,
+            minSpareRows: 1,
+            minSpareCols: 1,
+            height: '300px',
+            width: '100%',
+            stretchH: 'all',
+            afterChange: function(changes, source) {
+                if (source !== 'loadData') {
+                    currentData = hot.getData();
+                    updateColumnSelects();
+                }
+            }
+        });
+    }
+    
+    // Set up event listeners
+    function setupEventListeners() {
+        // Import button
+        document.getElementById('importBtn').addEventListener('click', function() {
+            const importModal = new bootstrap.Modal(document.getElementById('importModal'));
+            importModal.show();
+        });
+        
+        // Upload form submission
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            uploadFile();
+        });
+        
+        // Add trace button
+        document.getElementById('addTraceBtn').addEventListener('click', function() {
+            updateColumnSelects();
+            const traceModal = new bootstrap.Modal(document.getElementById('traceModal'));
+            traceModal.show();
+        });
+        
+        // Trace form submission
+        document.getElementById('traceForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            addTrace();
+        });
+        
+        // Add column button
+        document.getElementById('addColumnBtn').addEventListener('click', function() {
+            const colName = prompt('Enter column name:');
+            if (colName) {
+                const currentHeaders = hot.getColHeader();
+                currentHeaders.push(colName);
+                hot.updateSettings({
+                    colHeaders: currentHeaders
+                });
+                updateColumnSelects();
+            }
+        });
+        
+        // Add row button
+        document.getElementById('addRowBtn').addEventListener('click', function() {
+            hot.alter('insert_row', hot.countRows());
+        });
+        
+        // Save data button
+        document.getElementById('saveDataBtn').addEventListener('click', function() {
+            saveData();
+        });
+    }
+
+    
+       // Replace the generateGraph function in your index.html with this improved version
+function generateGraph(graphType, xColumn, yColumn) {
+    // Show loading spinner
+    document.getElementById('loadingSpinner').style.display = 'flex';
+    
+    console.log(`Generating ${graphType} graph with x=${xColumn}, y=${yColumn}`);
+    
+    fetch('{% url "data_viz_app:generate_graph" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({
+            graph_type: graphType,
+            x_column: xColumn,
+            y_column: yColumn
+        })
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Response received:', data);
+        
+        if (data.success) {
+            console.log('Graph generation successful');
+            
+            // Add trace to the list
+            const traceId = 'trace-' + Date.now();
+            const trace = {
+                id: traceId,
+                type: graphType,
+                x: xColumn,
+                y: yColumn
+            };
+            traces.push(trace);
+            
+            // Add trace to the UI
+            addTraceToUI(trace);
+            
+            // Log plot data size
+            console.log('Plot JSON string length:', data.plot ? data.plot.length : 'No plot data');
+            
+            try {
+                // Parse the plot JSON
+                const plotData = JSON.parse(data.plot);
+                console.log('Plot data parsed successfully');
+                
+                // Check if the plot data contains actual data points
+                if (plotData.data && plotData.data.length > 0) {
+                    const firstTrace = plotData.data[0];
+                    console.log('First trace:', firstTrace);
+                    
+                    if (firstTrace.x && firstTrace.x.length > 0 && 
+                        firstTrace.y && firstTrace.y.length > 0) {
+                        console.log('X data points:', firstTrace.x.length);
+                        console.log('Y data points:', firstTrace.y.length);
+                        console.log('Sample X data:', firstTrace.x.slice(0, 5));
+                        console.log('Sample Y data:', firstTrace.y.slice(0, 5));
+                        
+                        // Update plot
+                        updatePlot(plotData);
+                    } else {
+                        console.error('Trace data is empty or invalid');
+                        document.getElementById('plotContainer').innerHTML = 
+                            '<div class="alert alert-warning">No data points to display. The plot may be empty.</div>';
+                    }
+                } else {
+                    console.error('Plot data is empty or invalid');
+                    document.getElementById('plotContainer').innerHTML = 
+                        '<div class="alert alert-warning">No data points to display. The plot may be empty.</div>';
+                }
+            } catch (error) {
+                console.error('Error parsing plot JSON:', error);
+                document.getElementById('plotContainer').innerHTML = 
+                    `<div class="alert alert-danger">Error parsing plot data: ${error.message}</div>`;
+            }
+        } else {
+            console.error('Error from server:', data.message);
+            alert('Error: ' + data.message);
+            document.getElementById('plotContainer').innerHTML = 
+                `<div class="alert alert-danger">Error: ${data.message}</div>`;
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        alert('An error occurred while generating the graph.');
+        document.getElementById('plotContainer').innerHTML = 
+            `<div class="alert alert-danger">Error: ${error.message}</div>`;
+    })
+    .finally(() => {
+        // Hide loading spinner
+        document.getElementById('loadingSpinner').style.display = 'none';
+    });
+}
+    // Upload file function
+    function uploadFile() {
+        const form = document.getElementById('uploadForm');
+        const formData = new FormData(form);
+        
+        // Show loading spinner
+        document.getElementById('loadingSpinner').style.display = 'flex';
+        
+        fetch('{% url "data_viz_app:upload_file" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Close modal
+                bootstrap.Modal.getInstance(document.getElementById('importModal')).hide();
+                
+                // Update column selects
+                populateColumnSelects(data.columns);
+                
+                // Display the file name
+                const fileNameDisplay = document.getElementById('importedFileName');
+                if (fileNameDisplay) {
+                    fileNameDisplay.textContent = data.file_name;
+                    fileNameDisplay.parentElement.style.display = 'block';
+                }
+                
+                // Show success message
+                alert('File uploaded and processed successfully!');
+                
+                // Fetch the processed data
+                fetchProcessedData();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred during file upload.');
+        })
+        .finally(() => {
+            // Hide loading spinner
+            document.getElementById('loadingSpinner').style.display = 'none';
+        });
+    }
+    
+    // Fetch processed data
+    function fetchProcessedData() {
+        fetch('{% url "data_viz_app:get_columns" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update column selects
+                    populateColumnSelects(data.columns);
+                    
+                    // Load data into the spreadsheet if available
+                    if (data.data && data.data.length > 0) {
+                        loadDataIntoSpreadsheet(data.data, data.columns);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+    }
+    
+    // Load data into the spreadsheet
+    function loadDataIntoSpreadsheet(data, columns) {
+        // Convert data from array of objects to array of arrays
+        const arrayData = [];
+        
+        // Add data rows
+        data.forEach(row => {
+            const rowArray = [];
+            columns.forEach(col => {
+                rowArray.push(row[col] !== undefined ? row[col] : '');
+            });
+            arrayData.push(rowArray);
+        });
+        
+        // Update Handsontable
+        hot.updateSettings({
+            data: arrayData,
+            colHeaders: columns,
+            minSpareRows: 1,
+            minSpareCols: 1
+        });
+    }
+    
+    // Update column selects based on current data
+    function updateColumnSelects() {
+        // Get column headers
+        const headers = hot.getColHeader();
+        
+        // Remove empty headers
+        const validHeaders = headers.filter(header => header && header.trim() !== '');
+        
+        // Populate selects
+        populateColumnSelects(validHeaders);
+    }
+    
+    // Populate column select dropdowns
+    function populateColumnSelects(columns) {
+        const xSelect = document.getElementById('xColumn');
+        const ySelect = document.getElementById('yColumn');
+        
+        // Clear existing options
+        xSelect.innerHTML = '<option value="">Select a column</option>';
+        ySelect.innerHTML = '<option value="">Select a column</option>';
+        
+        // Add new options
+        columns.forEach(column => {
+            const xOption = document.createElement('option');
+            xOption.value = column;
+            xOption.textContent = column;
+            xSelect.appendChild(xOption);
+            
+            const yOption = document.createElement('option');
+            yOption.value = column;
+            yOption.textContent = column;
+            ySelect.appendChild(yOption);
+        });
+    }
+    
+    // Add a new trace
+    function addTrace() {
+        const graphType = document.getElementById('graphType').value;
+        const xColumn = document.getElementById('xColumn').value;
+        const yColumn = document.getElementById('yColumn').value;
+        
+        if (!graphType || !xColumn || !yColumn) {
+            alert('Please select all required fields.');
+            return;
+        }
+        
+        // Get data from the table
+        const data = hot.getData();
+        const headers = hot.getColHeader();
+        
+        // Check if the selected columns exist in the headers
+        if (!headers.includes(xColumn) || !headers.includes(yColumn)) {
+            alert(`Error: One or both of the selected columns (${xColumn}, ${yColumn}) do not exist in the data.`);
+            return;
+        }
+        
+        // Convert to array of objects
+        const jsonData = [];
+        for (let i = 0; i < data.length; i++) {
+            const row = {};
+            for (let j = 0; j < headers.length; j++) {
+                if (headers[j] && headers[j].trim() !== '') {
+                    row[headers[j]] = data[i][j];
+                }
+            }
+            // Only add rows with data
+            if (Object.values(row).some(val => val !== null && val !== '')) {
+                jsonData.push(row);
+            }
+        }
+        
+        // Show loading spinner
+        document.getElementById('loadingSpinner').style.display = 'flex';
+        
+        // Process data and generate graph
+        fetch('{% url "data_viz_app:process_data" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ data: jsonData })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Generate graph
+                generateGraph(graphType, xColumn, yColumn);
+                
+                // Close modal
+                bootstrap.Modal.getInstance(document.getElementById('traceModal')).hide();
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while processing data.');
+        })
+        .finally(() => {
+            // Hide loading spinner
+            document.getElementById('loadingSpinner').style.display = 'none';
+        });
+    }
+    
+
+    
+    // Add trace to UI
+    function addTraceToUI(trace) {
+        const container = document.getElementById('traceContainer');
+        
+        const traceItem = document.createElement('div');
+        traceItem.className = 'trace-item';
+        traceItem.id = trace.id;
+        
+        const graphTypeMap = {
+            'scatter': 'Scatter Plot',
+            'bar': 'Bar Chart',
+            'line': 'Line Chart',
+            'area': 'Area Chart',
+            'heatmap': 'Heatmap',
+            'contour': 'Contour Plot',
+            'pie': 'Pie Chart'
+        };
+        
+        traceItem.innerHTML = `
+            <div class="trace-item-header">
+                <span>${graphTypeMap[trace.type]}</span>
+                <button class="btn btn-sm btn-danger remove-trace" data-id="${trace.id}">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div>
+                <small>X: ${trace.x}</small><br>
+                <small>Y: ${trace.y}</small>
+            </div>
+        `;
+        
+        container.appendChild(traceItem);
+        
+        // Add event listener for remove button
+        traceItem.querySelector('.remove-trace').addEventListener('click', function() {
+            const traceId = this.getAttribute('data-id');
+            removeTrace(traceId);
+        });
+    }
+    
+    // Remove trace
+    function removeTrace(traceId) {
+        // Remove from UI
+        document.getElementById(traceId).remove();
+        
+        // Remove from array
+        traces = traces.filter(trace => trace.id !== traceId);
+        
+        // If there are still traces, regenerate the last one
+        if (traces.length > 0) {
+            const lastTrace = traces[traces.length - 1];
+            generateGraph(lastTrace.type, lastTrace.x, lastTrace.y);
+        } else {
+            // Clear plot
+            document.getElementById('plotContainer').innerHTML = '';
+        }
+    }
+    
+
+function updatePlot(plotData) {
+    const plotContainer = document.getElementById('plotContainer');
+
+    // Clear any existing content
+    plotContainer.innerHTML = '';
+
+    console.log('Updating plot with data:', plotData);
+
+    try {
+        // Check if we have valid data
+        if (!plotData.data || plotData.data.length === 0) {
+            plotContainer.innerHTML = '<div class="alert alert-warning">No data available for plotting.</div>';
+            return;
+        }
+
+        // Check if the first trace has data
+        const firstTrace = plotData.data[0];
+        if (!firstTrace.x || !firstTrace.y || 
+            firstTrace.x.length === 0 || firstTrace.y.length === 0) {
+            plotContainer.innerHTML = '<div class="alert alert-warning">No data points to display. The plot may be empty.</div>';
+            return;
+        }
+
+        // Log the data we're about to plot
+        console.log('Plotting data:');
+        console.log('X data:', firstTrace.x.slice(0, 10));
+        console.log('Y data:', firstTrace.y.slice(0, 10));
+        
+        // Create the plot with config options
+        Plotly.newPlot(
+            plotContainer, 
+            plotData.data, 
+            plotData.layout, 
+            {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['lasso2d', 'select2d']
+            }
+        );
+        console.log('Plot created successfully');
+    } catch (error) {
+        console.error('Error rendering plot:', error);
+        plotContainer.innerHTML = `<div class="alert alert-danger">Error rendering plot: ${error.message}</div>`;
+    }
+}
+    
+    // Save data
+    function saveData() {
+        const data = hot.getData();
+        const headers = hot.getColHeader();
+        
+        // Convert to array of objects
+        const jsonData = [];
+        for (let i = 0; i < data.length; i++) {
+            const row = {};
+            for (let j = 0; j < headers.length; j++) {
+                if (headers[j] && headers[j].trim() !== '') {
+                    row[headers[j]] = data[i][j];
+                }
+            }
+            // Only add rows with data
+            if (Object.values(row).some(val => val !== null && val !== '')) {
+                jsonData.push(row);
+            }
+        }
+        
+        const name = prompt('Enter a name for this dataset:');
+        if (!name) return;
+        
+        // Show loading spinner
+        document.getElementById('loadingSpinner').style.display = 'flex';
+        
+        fetch('{% url "data_viz_app:save_data" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                name: name,
+                data: jsonData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Data saved successfully!');
+            } else {
+                alert('Error: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while saving data.');
+        })
+        .finally(() => {
+            // Hide loading spinner
+            document.getElementById('loadingSpinner').style.display = 'none';
+        });
+    }
+</script>
+{% endblock %}
+{% endblock %}
