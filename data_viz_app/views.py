@@ -8,7 +8,8 @@ from django.conf import settings
 from .models import Dataset, DataTable
 from .forms import DatasetUploadForm, GraphSelectionForm
 from .utils.data_processor import (
-    process_uploaded_file, 
+    read_and_preprocess_csv,
+    create_dataframe_from_preprocessed_data,
     get_dataframe_from_json,
     get_column_types,
     dataframe_to_json,
@@ -33,21 +34,8 @@ def index(request):
     
     return render(request, 'data_viz_app/index.html', context)
 
-import pandas as pd
-from django.http import JsonResponse
-from .forms import DatasetUploadForm
-from .models import Dataset
- 
-def process_uploaded_file(file_path):
-    try:
-        df = pd.read_csv(file_path)
-        # Perform any additional processing if needed
-        return df
-    except Exception as e:
-        raise Exception(f"Error processing CSV file: {str(e)}")
- 
 def upload_file(request):
-    """Handle file upload"""
+    """Handle file upload with preprocessing"""
     if request.method == 'POST':
         form = DatasetUploadForm(request.POST, request.FILES)
         if form.is_valid():
@@ -55,7 +43,18 @@ def upload_file(request):
             
             try:
                 global current_df
-                current_df = process_uploaded_file(dataset.file.path)
+                
+                # Use the new preprocessing function
+                uploaded_file = request.FILES['file']
+                
+                # Reset file pointer to beginning (in case it was read during form validation)
+                uploaded_file.seek(0)
+                
+                # Preprocess the CSV file
+                header, cleaned_data = read_and_preprocess_csv(uploaded_file)
+                
+                # Create DataFrame from preprocessed data
+                current_df = create_dataframe_from_preprocessed_data(header, cleaned_data)
                 
                 # Save processed status
                 dataset.processed = True
@@ -63,11 +62,14 @@ def upload_file(request):
                 
                 return JsonResponse({
                     'success': True,
-                    'message': 'File uploaded and processed successfully',
+                    'message': 'File uploaded and preprocessed successfully',
                     'columns': list(current_df.columns),
-                    'file_name': dataset.name,  # Return the file name
+                    'file_name': dataset.name,
+                    'rows_processed': len(cleaned_data),
                 })
             except Exception as e:
+                # Delete the dataset if processing fails
+                dataset.delete()
                 return JsonResponse({
                     'success': False,
                     'message': f'Error processing file: {str(e)}',
@@ -80,9 +82,6 @@ def upload_file(request):
             })
     
     return JsonResponse({'success': False, 'message': 'Invalid request method'})
-
-
- 
 
 @csrf_exempt
 def process_data(request):
@@ -228,4 +227,4 @@ def save_data(request):
     
     return JsonResponse({'success': False, 'message': 'Invalid request method'})
 
-print("Views created")
+print("Views created with preprocessing integration")

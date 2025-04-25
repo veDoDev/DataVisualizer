@@ -1,6 +1,48 @@
 import pandas as pd
 import numpy as np
 import json
+import csv
+import io
+
+def read_and_preprocess_csv(uploaded_file):
+    """
+    Read and preprocess an uploaded CSV file
+    Returns header and cleaned data as lists
+    """
+    # Read uploaded CSV file
+    decoded_file = uploaded_file.read().decode('utf-8')
+    csv_reader = csv.reader(io.StringIO(decoded_file))
+    raw_data = list(csv_reader)
+
+    if not raw_data:
+        return [], []
+
+    # Separate header and data
+    header = raw_data[0]
+    data_rows = raw_data[1:]
+
+    cleaned_data = []
+
+    for row in data_rows:
+        # Skip empty rows
+        if not any(cell.strip() for cell in row):
+            continue
+
+        # Clean each cell: strip whitespace and replace empty with '0'
+        cleaned_row = []
+        for cell in row:
+            cell = cell.strip()
+            if cell == "":
+                cell = "0"
+            try:
+                # Try converting to float
+                cleaned_row.append(float(cell))
+            except ValueError:
+                # Keep as string if not a number
+                cleaned_row.append(cell)
+        cleaned_data.append(cleaned_row)
+
+    return header, cleaned_data
 
 def process_uploaded_file(file_path):
     """Process an uploaded CSV file and return a pandas DataFrame"""
@@ -15,6 +57,15 @@ def process_uploaded_file(file_path):
         return df
     except Exception as e:
         raise Exception(f"Error processing CSV file: {str(e)}")
+
+def create_dataframe_from_preprocessed_data(header, cleaned_data):
+    """Create a pandas DataFrame from preprocessed header and data"""
+    try:
+        # Create DataFrame from cleaned data with proper column names
+        df = pd.DataFrame(cleaned_data, columns=header)
+        return df
+    except Exception as e:
+        raise Exception(f"Error creating DataFrame from preprocessed data: {str(e)}")
 
 def get_dataframe_from_json(data_json):
     """Convert JSON data to a pandas DataFrame"""
